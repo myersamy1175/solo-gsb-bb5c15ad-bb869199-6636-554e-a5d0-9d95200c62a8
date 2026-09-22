@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from . import audit, crud, graph, safe_plans, seed
+from . import audit, crud, graph, regression, safe_plans, seed
 from .database import get_connection, init_db
 from .schemas import (
     ConfirmPlanIn,
@@ -454,6 +454,25 @@ def compare_recipes(payload: dict, conn=Depends(conn_dep)):
         },
         "missing_nodes": sorted(set(a["missing_nodes"]) | set(b["missing_nodes"])),
     }
+
+
+# ---------------- 过敏原回归矩阵（同一配方代码的全版本序列） ----------------
+
+@app.get("/api/allergen-matrix")
+def allergen_matrix_route(recipe_code: str, conn=Depends(conn_dep)):
+    """同一配方代码的过敏原回归矩阵：稳定排序全部版本后逐版复用替代图分析，
+    输出相邻版本间新增/消失的直接过敏原、替代链过敏原、受影响配料（含来源
+    路径与循环/缺失标记）及每个过敏原的首次出现版本。
+
+    使用 query 参数而非 /recipes/{id} 前缀，避免与按 id 的路由冲突。
+    """
+    code = (recipe_code or "").strip()
+    if not code:
+        raise HTTPException(422, "请提供 recipe_code 查询参数，如 /api/allergen-matrix?recipe_code=COOKIE-001")
+    result = regression.build_matrix(conn, code)
+    if result is None:
+        raise HTTPException(404, f"找不到配方代码 {code} 的任何版本")
+    return result
 
 
 # ---------------- 导入 / 导出 ----------------

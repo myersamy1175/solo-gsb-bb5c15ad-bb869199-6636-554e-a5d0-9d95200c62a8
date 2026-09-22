@@ -55,6 +55,19 @@ RECIPES = [
             RecipeItemIn(ingredient_code="MILK", quantity=30, unit="ml"),
         ],
     ),
+    RecipeIn(
+        code="COOKIE-001",
+        version="3.0",
+        name="经典回归版曲奇",
+        note="改回小麦粉与鸡蛋（过敏原回归），保留溜酱油与牛奶，用于回归矩阵演示",
+        items=[
+            RecipeItemIn(ingredient_code="WHEAT_FLOUR", quantity=210, unit="g"),
+            RecipeItemIn(ingredient_code="BUTTER", quantity=120, unit="g"),
+            RecipeItemIn(ingredient_code="EGG", quantity=1, unit="个"),
+            RecipeItemIn(ingredient_code="TAMARI", quantity=5, unit="ml"),
+            RecipeItemIn(ingredient_code="MILK", quantity=20, unit="ml"),
+        ],
+    ),
 ]
 
 

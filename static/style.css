@@ -253,6 +253,79 @@ tr.row-substituted td { background: var(--ok-bg); }
 tr.row-added td { background: var(--ok-bg); }
 tr.row-removed td { background: var(--removed-bg); }
 
+/* 过敏原回归矩阵 */
+.matrix-card { margin-bottom: 22px; }
+.matrix-picker { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+.matrix-picker label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+.matrix-filters {
+  display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+  padding: 10px 12px; margin: 10px 0 14px;
+  background: #fafbfa; border: 1px solid var(--line); border-radius: 8px;
+}
+.matrix-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.matrix-search-label { min-width: 180px; flex: 1; }
+.matrix-check-label { flex-direction: row !important; align-items: center; font-size: 13px; color: var(--ink); }
+.matrix-empty { margin: 12px 0 0; }
+
+.matrix-rows { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.matrix-row {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.matrix-row.has-changes { border-left: 4px solid #d98a1f; }
+.matrix-row.no-changes { border-left: 4px solid var(--line); opacity: .9; }
+.matrix-row > summary {
+  cursor: pointer; padding: 10px 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  font-size: 14px; list-style: revert;
+}
+.matrix-row[open] > summary { border-bottom: 1px solid var(--line); background: #fafbfa; }
+.matrix-arrow { font-weight: 700; color: var(--primary-dark); }
+.matrix-row-time { margin-left: auto; color: var(--muted); font-size: 12px; }
+.matrix-row-body { padding: 12px 14px; }
+
+.matrix-group { margin-bottom: 12px; }
+.matrix-group h4 { margin: 0 0 6px; font-size: 14px; color: #3a4a43; }
+.matrix-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.matrix-col-title { font-size: 13px; display: inline-block; margin-bottom: 4px; }
+.matrix-col-title.added { color: #8a4b00; }
+.matrix-col-title.removed { color: var(--primary-dark); }
+
+.matrix-entry {
+  border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; margin-bottom: 6px;
+  background: #fafbfa;
+}
+.matrix-allergen-added { border-left: 3px solid #d98a1f; }
+.matrix-allergen-removed { border-left: 3px solid var(--primary); }
+.matrix-entry-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.matrix-entry details summary { cursor: pointer; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.tag.regression { background: #fde8d6; border-color: #e0a06a; color: #a04a00; font-weight: 600; }
+
+.matrix-ing-details { margin-top: 8px; }
+.matrix-ing-details > summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.matrix-ing {
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; margin-bottom: 8px;
+  background: #fafbfa;
+}
+.matrix-ing.side-current { border-left: 3px solid #d98a1f; }
+.matrix-ing.side-previous { border-left: 3px solid var(--primary); }
+.matrix-ing-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.matrix-ing-allergens { margin-top: 6px; font-size: 13px; }
+.matrix-delta { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+.matrix-ing details summary { cursor: pointer; font-size: 12px; color: var(--muted); margin: 4px 0; }
+.matrix-flags { margin: 8px 0; }
+
+.matrix-grid-card { padding: 0; margin-bottom: 14px; }
+.matrix-grid-card > summary { cursor: pointer; padding: 10px 14px; font-size: 14px; }
+.matrix-grid-card[open] > summary { border-bottom: 1px solid var(--line); }
+.matrix-grid-wrap { overflow-x: auto; padding: 10px 14px; }
+.matrix-grid th, .matrix-grid td { text-align: center; font-size: 12px; padding: 6px 8px; }
+.matrix-grid td:first-child { text-align: left; white-space: nowrap; }
+.matrix-grid .cell-none { color: var(--line); }
+.matrix-grid .cell-direct { background: #f6dcd8; color: var(--danger); font-weight: 700; }
+.matrix-grid .cell-chain { background: var(--new-bg); color: #8a4b00; font-weight: 700; }
+.matrix-grid .first { box-shadow: inset 0 0 0 2px var(--primary); }
+
+@media (max-width: 760px) { .matrix-cols { grid-template-columns: 1fr; } }
+
 /* 配方变更审计 */
 .audit-card { margin-top: 22px; }
 .muted-sep { color: var(--muted); font-size: 13px; }

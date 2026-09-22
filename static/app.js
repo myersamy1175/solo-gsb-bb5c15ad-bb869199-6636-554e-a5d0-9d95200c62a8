@@ -356,6 +356,7 @@ function fillRecipeSelects() {
     $("#cmp-a").selectedIndex = 0;
     $("#cmp-b").selectedIndex = 1;
   }
+  fillMatrixCodeOptions();
   fillAuditScopeOptions();
 }
 
@@ -874,6 +875,335 @@ $("#safe-result").addEventListener("click", (e) => {
   if (!e.target.closest("#btn-download-csv") || !safeState.confirmed) return;
   downloadBlob(toPurchaseCsv(safeState.confirmed), `${purchaseFileBase(safeState.confirmed)}.csv`, "text/csv;charset=utf-8");
 });
+
+// ---------------- 过敏原回归矩阵 ----------------
+
+const matrixState = { data: null };
+
+function fillMatrixCodeOptions() {
+  const groups = {};
+  state.recipes.forEach((r) => {
+    (groups[r.code] ||= []).push(r);
+  });
+  const sel = $("#matrix-code");
+  const prev = sel.value;
+  sel.innerHTML = Object.entries(groups).map(([code, rs]) =>
+    `<option value="${esc(code)}">${esc(code)} · ${rs.length} 个版本（${esc(rs[0].name)}）</option>`).join("");
+  if (prev && Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+}
+
+function matrixPathLine(path, prefix) {
+  // 复用分析页的路径渲染，但把路径 id 加上版本前缀避免跨行撞号
+  const cloned = { ...path, id: `${prefix}#${path.id}` };
+  return renderPath(cloned);
+}
+
+function matrixEntryTags(entry) {
+  const tags = [];
+  if (entry.regression) tags.push('<span class="tag regression">↩ 回归</span>');
+  if (entry.new_in_series) tags.push('<span class="tag new">系列首次出现</span>');
+  const at = entry.first_seen_version != null
+    ? `<span class="tag muted">首次出现：v${esc(entry.first_seen_version)}</span>` : "";
+  return tags.join(" ") + at;
+}
+
+function matrixEntryHtml(entry, direction, prefix) {
+  const cls = direction === "added" ? "matrix-allergen-added" : "matrix-allergen-removed";
+  let html = `<div class="matrix-entry ${cls}">
+    <div class="matrix-entry-head">
+      ${allergenTags([entry.allergen], direction === "added" ? "new" : "ok")}
+      ${matrixEntryTags(entry)}
+    </div>`;
+  if (entry.sources.length) {
+    html += `<details><summary>来源路径（${entry.sources.length} 条）</summary><div class="path-list">`;
+    html += entry.sources.map((s) =>
+      `<div class="path-line" style="border:none;background:none;padding:2px 4px">
+        <span class="code-mono">${esc(s.ingredient_code)}</span>
+        <span class="tag ${s.via_substitution ? "new" : "direct"}">${s.via_substitution ? `替代链引入（${esc(s.introduced_by)}）` : "原料自带"}</span>
+        ${prefixTag(s, prefix)}
+        <span class="tag muted">${s.chain.map(esc).join(" → ")}</span>
+      </div>`).join("");
+    html += `</div></details>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function prefixTag(s, prefix) {
+  return `<span class="path-id">${esc(prefix)}#${s.path_id}</span>`;
+}
+
+const ITEM_CHANGE_LABEL = {
+  added: ["新增配料", "new"],
+  removed: ["移除配料", "danger"],
+  unchanged: ["配料保留", "ok"],
+  quantity_changed: ["用量变化", "muted"],
+  unit_changed: ["单位变化", "muted"],
+  measure_changed: ["用量/单位变化", "muted"],
+};
+
+function matrixIngredientHtml(ing, prefix) {
+  const [label, tagCls] = ITEM_CHANGE_LABEL[ing.item_change] || [ing.item_change, "muted"];
+  const delta = [];
+  if (ing.direct_added.length) delta.push(`直接 +${ing.direct_added.map(esc).join("、")}`);
+  if (ing.direct_removed.length) delta.push(`直接 −${ing.direct_removed.map(esc).join("、")}`);
+  if (ing.chain_added.length) delta.push(`替代链 +${ing.chain_added.map(esc).join("、")}`);
+  if (ing.chain_removed.length) delta.push(`替代链 −${ing.chain_removed.map(esc).join("、")}`);
+  const marked = ing.paths.some((p) => p.cyclic || p.missing || p.truncated);
+  let html = `<div class="matrix-ing ${ing.side === "current" ? "side-current" : "side-previous"}">
+    <div class="matrix-ing-head">
+      <span class="code-mono">${esc(ing.ingredient_code)}</span>
+      <span>${esc(ing.ingredient_name)}${ing.quantity != null ? ` · ${ing.quantity}${esc(ing.unit || "")}` : ""}</span>
+      <span class="tag ${tagCls}">${label}</span>
+      ${ing.side === "current" ? '<span class="tag muted">新版本</span>' : '<span class="tag muted">上一版</span>'}
+      ${!ing.exists ? '<span class="badge missing">原料缺失</span>' : ""}
+      ${ing.has_cycle ? '<span class="badge cycle">含循环路径</span>' : ""}
+    </div>
+    <div class="matrix-ing-allergens">
+      直接：${allergenTags(ing.direct_allergens, "direct")}
+      替代链：${allergenTags(ing.chain_allergens, "allergen")}
+      ${delta.length ? `<div class="matrix-delta">${delta.map((d) => `<span class="tag new">${d}</span>`).join(" ")}</div>` : ""}
+    </div>`;
+  if (ing.paths.length) {
+    html += `<details><summary>${marked ? "查看来源路径（含循环 / 缺失 / 超深标记）" : `查看相关来源路径（${ing.paths.length} 条）`}</summary>
+      <div class="path-list">${ing.paths.map((p) => matrixPathLine(p, prefix)).join("")}</div></details>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function matrixRowFilters() {
+  return {
+    allergen: $("#matrix-filter-allergen").value,
+    kind: $("#matrix-filter-kind").value,
+    layer: $("#matrix-filter-layer").value,
+    ingredient: $("#matrix-filter-ingredient").value.trim().toLowerCase(),
+    changesOnly: $("#matrix-filter-changes-only").checked,
+  };
+}
+
+function matrixEntryMatches(entry, f) {
+  const isAdded = entry.regression || entry.new_in_series || entry.first_seen_order_index != null;
+  if (f.kind === "added" && !isAdded) return false;
+  if (f.kind === "removed" && isAdded) return false;
+  if (f.kind === "regression" && !(isAdded && entry.regression)) return false;
+  if (f.kind === "new_series" && !(isAdded && entry.new_in_series)) return false;
+  if (f.allergen && entry.allergen !== f.allergen) return false;
+  return true;
+}
+
+function matrixIngredientMatches(ing, f) {
+  if (f.allergen && !(
+    ing.chain_allergens.includes(f.allergen) ||
+    ing.transition_allergens_carried.includes(f.allergen)
+  )) return false;
+  if (f.ingredient) {
+    const hay = `${ing.ingredient_code} ${ing.ingredient_name}`.toLowerCase();
+    if (!hay.includes(f.ingredient)) return false;
+  }
+  return true;
+}
+
+function matrixRowHtml(row) {
+  const f = matrixRowFilters();
+  const prefix = `v${row.from.version}→v${row.to.version}`;
+
+  const groups = [];
+  const layers = f.layer === "direct" ? [["direct", "直接过敏原"]]
+    : f.layer === "chain" ? [["chain", "替代链过敏原"]]
+    : [["direct", "直接过敏原"], ["chain", "替代链过敏原"]];
+
+  let matchedCount = 0;
+  let matchedIngredients = false;
+  // 消失项仅在「不筛选变化类型」或明确选择「仅消失」时展示
+  const removedKindOk = !f.kind || f.kind === "removed";
+  for (const [layer, label] of layers) {
+    const added = row[layer].added.filter((e) => {
+      const ok = matrixEntryMatches(e, f);
+      if (ok) matchedCount += 1;
+      return ok;
+    });
+    const removed = row[layer].removed.filter((e) => {
+      const ok = removedKindOk && (!f.allergen || e.allergen === f.allergen);
+      if (ok) matchedCount += 1;
+      return ok;
+    });
+    groups.push({ layer, label, added, removed });
+  }
+
+  const ingredientsCur = row.affected_ingredients.current.filter((ing) => {
+    const ok = matrixIngredientMatches(ing, f);
+    if (ok) matchedIngredients = true;
+    return ok;
+  });
+  const ingredientsPrev = row.affected_ingredients.previous.filter((ing) => {
+    const ok = matrixIngredientMatches(ing, f);
+    if (ok) matchedIngredients = true;
+    return ok;
+  });
+
+  const allergenFilterActive = f.allergen || f.kind || f.layer;
+  const ingredientFilterActive = f.ingredient;
+  if (allergenFilterActive && matchedCount === 0) return "";
+  if (ingredientFilterActive && !matchedIngredients) return "";
+  if (f.changesOnly && !row.has_changes && !allergenFilterActive && !ingredientFilterActive) return "";
+
+  let html = `<details class="matrix-row ${row.has_changes ? "has-changes" : "no-changes"}">
+    <summary>
+      <span class="matrix-arrow">v${esc(row.from.version)}</span>
+      <span class="arrow">→</span>
+      <span class="matrix-arrow">v${esc(row.to.version)}</span>
+      <span class="tag ${row.direct.added.length + row.chain.added.length ? "new" : "muted"}">新增 ${row.direct.added.length + row.chain.added.length}</span>
+      <span class="tag ${row.direct.removed.length + row.chain.removed.length ? "ok" : "muted"}">消失 ${row.direct.removed.length + row.chain.removed.length}</span>
+      <span class="tag muted">受影响配料 ${row.affected_ingredients.current.length + row.affected_ingredients.previous.length}</span>
+      ${row.cycles.to.length ? `<span class="badge cycle">循环 ${row.cycles.to.length}</span>` : ""}
+      ${row.missing_nodes.to.length ? `<span class="badge missing">缺失 ${row.missing_nodes.to.length}</span>` : ""}
+      <span class="matrix-row-time">${esc(row.to.created_at)} UTC</span>
+    </summary>
+    <div class="matrix-row-body">`;
+
+  for (const g of groups) {
+    html += `<div class="matrix-group">
+      <h4>${esc(g.label)}</h4>
+      <div class="matrix-cols">
+        <div><strong class="matrix-col-title added">新增</strong>
+          ${g.added.length ? g.added.map((e) => matrixEntryHtml(e, "added", prefix)).join("") : '<span class="tag muted">无</span>'}
+        </div>
+        <div><strong class="matrix-col-title removed">消失</strong>
+          ${g.removed.length ? g.removed.map((e) => matrixEntryHtml(e, "removed", prefix)).join("") : '<span class="tag muted">无</span>'}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const cycleNodes = [
+    ...new Set([
+      ...row.cycles.from.map((c) => c.cycle_node),
+      ...row.cycles.to.map((c) => c.cycle_node),
+    ]),
+  ];
+  const missingNodes = [...new Set([...row.missing_nodes.from, ...row.missing_nodes.to])];
+  if (cycleNodes.length || missingNodes.length) {
+    html += `<div class="alert ${cycleNodes.length ? "cycle" : "warn"} matrix-flags">`;
+    if (cycleNodes.length) html += `<strong>⚠ 循环标记：</strong>在节点 ${cycleNodes.map(esc).join("、")} 处成环（详见下方配料路径）；`;
+    if (missingNodes.length) html += `<strong>⚠ 缺失标记：</strong>${missingNodes.map(esc).join("、")} 不在原料库中`;
+    html += `</div>`;
+  }
+
+  html += `<details class="matrix-ing-details" ${f.ingredient || f.allergen ? "open" : ""}>
+    <summary>受影响配料（新版本 ${ingredientsCur.length} 项 / 上一版 ${ingredientsPrev.length} 项${f.allergen || f.ingredient ? "，已按当前筛选" : ""}，展开查看来源路径）</summary>
+    <div class="matrix-cols">
+      <div>${ingredientsCur.length ? ingredientsCur.map((i) => matrixIngredientHtml(i, prefix)).join("") : '<span class="tag muted">无</span>'}</div>
+      <div>${ingredientsPrev.length ? ingredientsPrev.map((i) => matrixIngredientHtml(i, prefix)).join("") : '<span class="tag muted">无</span>'}</div>
+    </div>
+  </details>`;
+
+  html += `</div></details>`;
+  return html;
+}
+
+function matrixGridCell(versions, allergen, firstInfo, layer) {
+  return versions.map((v, idx) => {
+    const hasDirect = v.direct_allergens.includes(allergen);
+    const hasChain = v.chain_allergens.includes(allergen);
+    // 类别筛选为"直接"时，仅直接携带算存在；其余情况链上存在也算
+    const active = layer === "direct" ? hasDirect : (hasDirect || hasChain);
+    let cls = "cell-none";
+    let mark = "·";
+    let title = `v${v.version}：不含 ${allergen}`;
+    if (active) {
+      if (hasDirect) { cls = "cell-direct"; mark = "直"; title = `v${v.version}：直接过敏原`; }
+      else { cls = "cell-chain"; mark = "链"; title = `v${v.version}：替代链过敏原`; }
+      const firstIdx = layer === "direct"
+        ? firstInfo.first_direct_order_index
+        : (firstInfo.first_chain_order_index ?? firstInfo.first_direct_order_index);
+      if (firstIdx === idx) cls += " first";
+    }
+    return `<td class="${cls}" title="${esc(title)}">${mark}</td>`;
+  }).join("");
+}
+
+function renderMatrix(data) {
+  matrixState.data = data;
+  const box = $("#matrix-result");
+  $("#matrix-filters").classList.toggle("hidden", !data.enough_versions);
+
+  // 填充过敏原筛选（保留当前选择）
+  const sel = $("#matrix-filter-allergen");
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">全部过敏原</option>' +
+    data.all_allergens.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+  if (Array.from(sel.options).some((o) => o.value === prev)) sel.value = prev;
+
+  if (!data.enough_versions) {
+    box.innerHTML = `<div class="alert warn matrix-empty">
+      <strong>版本不足：</strong>${esc(data.message)}。
+      请先在「配方版本」页为该代码添加新版本（建议至少 2 个版本）后再生成矩阵。
+    </div>`;
+    return;
+  }
+
+  const first = data.versions[0];
+  const last = data.versions[data.versions.length - 1];
+  let html = `
+    <div class="summary-bar">
+      <div class="summary-box"><h4>配方代码</h4><strong>${esc(data.recipe_code)}</strong><br><small>${esc(last.name)}</small></div>
+      <div class="summary-box"><h4>版本数 / 转换数</h4><strong>${data.version_count}</strong> 版 · <strong>${data.rows.length}</strong> 个相邻版本对</div>
+      <div class="summary-box"><h4>排序规则</h4><small>${esc(data.sort_rule)}</small></div>
+      <div class="summary-box"><h4>系列涉及过敏原</h4>${allergenTags(data.all_allergens, "allergen")}</div>
+    </div>`;
+
+  // 过敏原 × 版本 存在性网格
+  const f0 = matrixRowFilters();
+  const filteredAllergen = f0.allergen;
+  const gridAllergens = filteredAllergen
+    ? data.all_allergens.filter((a) => a === filteredAllergen)
+    : data.all_allergens;
+  const firstLabel = f0.layer === "direct" ? "首次（直接）" : "首次出现";
+  html += `<details class="card matrix-grid-card">
+    <summary>过敏原 × 版本存在性矩阵（${gridAllergens.length} 种过敏原；单元格：直=直接，链=仅替代链，描边=首次出现）</summary>
+    <div class="matrix-grid-wrap">
+    <table class="data-table matrix-grid">
+      <thead><tr><th>过敏原</th>${data.versions.map((v) => `<th>v${esc(v.version)}<br><small>${esc(v.created_at.slice(5, 16))}</small></th>`).join("")}<th>${firstLabel}</th></tr></thead>
+      <tbody>
+        ${gridAllergens.map((a) => {
+          const info = data.allergen_first_seen[a] || {};
+          const firstVer = f0.layer === "direct" ? info.first_direct_version
+            : (info.first_chain_version ?? info.first_direct_version);
+          return `<tr><td><span class="tag allergen">${esc(a)}</span></td>
+            ${matrixGridCell(data.versions, a, info, f0.layer)}
+            <td><small>${firstVer != null ? `v${esc(firstVer)}` : "—"}</small></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table></div></details>`;
+
+  // 相邻版本转换行
+  const rowHtml = data.rows.map(matrixRowHtml).join("");
+  html += `<div class="matrix-rows">${rowHtml || '<div class="empty">当前筛选条件下没有匹配的版本对</div>'}</div>`;
+  box.innerHTML = html;
+}
+
+async function loadMatrix() {
+  const code = $("#matrix-code").value;
+  if (!code) return;
+  $("#matrix-result").innerHTML = '<div class="hint">正在生成回归矩阵…</div>';
+  try {
+    const data = await api(`/api/allergen-matrix?recipe_code=${encodeURIComponent(code)}`);
+    renderMatrix(data);
+  } catch (err) {
+    matrixState.data = null;
+    $("#matrix-filters").classList.add("hidden");
+    $("#matrix-result").innerHTML = "";
+    toast(err.message, true);
+  }
+}
+
+$("#btn-matrix").addEventListener("click", loadMatrix);
+$("#matrix-code").addEventListener("change", loadMatrix);
+["matrix-filter-allergen", "matrix-filter-kind", "matrix-filter-layer", "matrix-filter-changes-only"].forEach((id) =>
+  $("#" + id).addEventListener("change", () => { if (matrixState.data) renderMatrix(matrixState.data); }));
+$("#matrix-filter-ingredient").addEventListener("input", () => { if (matrixState.data) renderMatrix(matrixState.data); });
 
 // ---------------- 版本对比 ----------------
 

@@ -135,6 +135,46 @@
   <!-- ========== 版本对比 ========== -->
   <section id="tab-compare" class="panel">
     <div class="panel-head">
+      <h2>过敏原回归矩阵</h2>
+    </div>
+    <div class="card matrix-card">
+      <div class="matrix-picker">
+        <label>配方代码 <select id="matrix-code" style="min-width:240px"></select></label>
+        <button class="btn primary" id="btn-matrix">生成回归矩阵</button>
+      </div>
+      <p class="hint">后端按「版本号自然序（1.2 &lt; 1.10）→ 创建时间 → id」稳定排序全部版本，逐版复用替代图分析，输出每版相对上一版 <strong>新增 / 消失的直接过敏原与替代链过敏原</strong>、受影响配料与<strong>首次出现版本</strong>；每行可展开查看来源路径、循环与缺失标记。</p>
+
+      <div id="matrix-filters" class="matrix-filters hidden">
+        <label>过敏原筛选
+          <select id="matrix-filter-allergen"><option value="">全部过敏原</option></select>
+        </label>
+        <label>变化类型
+          <select id="matrix-filter-kind">
+            <option value="">新增与消失</option>
+            <option value="added">仅新增</option>
+            <option value="removed">仅消失</option>
+            <option value="regression">仅回归（消失后再次出现）</option>
+            <option value="new_series">仅全新出现</option>
+          </select>
+        </label>
+        <label>类别
+          <select id="matrix-filter-layer">
+            <option value="">直接 + 替代链</option>
+            <option value="direct">仅直接过敏原</option>
+            <option value="chain">仅替代链过敏原</option>
+          </select>
+        </label>
+        <label class="matrix-search-label">配料检索
+          <input id="matrix-filter-ingredient" placeholder="配料代码 / 名称关键字" />
+        </label>
+        <label class="matrix-check-label">
+          <input type="checkbox" id="matrix-filter-changes-only" checked /> 仅看有过敏原变化的版本对
+        </label>
+      </div>
+      <div id="matrix-result"></div>
+    </div>
+
+    <div class="panel-head">
       <h2>两版配方差异对比</h2>
     </div>
     <div class="card compare-picker">
