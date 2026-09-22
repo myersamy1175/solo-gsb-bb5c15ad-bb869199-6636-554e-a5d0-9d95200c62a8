@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from . import audit, crud, graph, safe_plans, seed
+from . import audit, crud, graph, regression, safe_plans, seed
 from .database import get_connection, init_db
 from .schemas import (
     ConfirmPlanIn,
@@ -454,6 +454,23 @@ def compare_recipes(payload: dict, conn=Depends(conn_dep)):
         },
         "missing_nodes": sorted(set(a["missing_nodes"]) | set(b["missing_nodes"])),
     }
+
+
+# ---------------- 过敏原回归矩阵（同一配方代码逐版对比） ----------------
+
+@app.get("/api/recipes/by-code/{code:path}/allergen-regression")
+def allergen_regression_route(code: str, conn=Depends(conn_dep)):
+    """某配方代码的逐版过敏原回归矩阵。
+
+    按版本号 + 创建时间稳定排序后逐版复用替代图分析，输出每版相对上一版
+    新增/消失的直接过敏原、替代链过敏原、受影响配料及首次出现版本，
+    并保留可展开的来源路径与循环/缺失标记。
+    版本不足 2 个时仍返回 200（含基线与明确提示），配方代码不存在返回 404。
+    """
+    result = regression.build_regression_matrix(conn, code)
+    if result is None:
+        raise HTTPException(404, f"找不到配方代码 {code}")
+    return result
 
 
 # ---------------- 导入 / 导出 ----------------

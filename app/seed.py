@@ -1,4 +1,4 @@
-"""内置示例数据：一条黄油 <-> 人造黄油循环，两版曲奇配方。"""
+"""内置示例数据：一条黄油 <-> 人造黄油循环，三版曲奇配方（含过敏原回归/回归消失场景）。"""
 from . import crud
 from .schemas import IngredientIn, RecipeIn, RecipeItemIn, SubstitutionIn
 
@@ -53,6 +53,19 @@ RECIPES = [
             RecipeItemIn(ingredient_code="APPLESAUCE", quantity=60, unit="g"),
             RecipeItemIn(ingredient_code="TAMARI", quantity=5, unit="ml"),
             RecipeItemIn(ingredient_code="MILK", quantity=30, unit="ml"),
+        ],
+    ),
+    RecipeIn(
+        code="COOKIE-001",
+        version="3.0",
+        name="燕麦奶低敏曲奇",
+        note="回归版本：鸡蛋回归（蛋过敏原回归），牛奶改燕麦奶（直接乳过敏原消失）",
+        items=[
+            RecipeItemIn(ingredient_code="RICE_FLOUR", quantity=200, unit="g"),
+            RecipeItemIn(ingredient_code="MARGARINE", quantity=120, unit="g"),
+            RecipeItemIn(ingredient_code="EGG", quantity=1, unit="个"),
+            RecipeItemIn(ingredient_code="TAMARI", quantity=5, unit="ml"),
+            RecipeItemIn(ingredient_code="OAT_MILK", quantity=30, unit="ml"),
         ],
     ),
 ]

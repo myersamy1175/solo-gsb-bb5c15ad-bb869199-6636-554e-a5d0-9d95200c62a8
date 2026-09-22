@@ -248,10 +248,56 @@ tr.row-substituted td { background: var(--ok-bg); }
 /* 对比 */
 .compare-picker { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
 .compare-picker label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+.sub-title { margin: 22px 0 10px; font-size: 16px; }
 .diff-section { margin-bottom: 18px; }
 .diff-section h3 { font-size: 15px; margin: 0 0 8px; }
 tr.row-added td { background: var(--ok-bg); }
 tr.row-removed td { background: var(--removed-bg); }
+
+/* 过敏原回归矩阵 */
+.regression-card { margin-bottom: 22px; }
+.reg-filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 4px 0 14px;
+}
+.reg-check { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.reg-check input { margin: 0; }
+.reg-row { padding: 0; margin-bottom: 12px; }
+.reg-row > summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.reg-row[open] > summary { border-bottom: 1px solid var(--line); background: #fafbfa; }
+.reg-row.reg-has-add { border-left: 4px solid #d98a1f; }
+.reg-row.reg-has-remove { border-left-color: var(--primary); }
+.reg-row.reg-has-add.reg-has-remove { border-left-color: #8e5bb5; }
+.reg-row.reg-has-flag { box-shadow: 0 0 0 1px #f0d9d6 inset; }
+.reg-version { font-weight: 700; font-size: 16px; color: var(--primary-dark); font-family: ui-monospace, Menlo, Consolas, monospace; }
+.reg-time { margin-left: auto; color: var(--muted); font-size: 12px; }
+.reg-row .summary-bar { margin: 14px 16px 10px; }
+.reg-row details { margin: 6px 16px; }
+.reg-row details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.reg-current { padding: 8px 16px 14px; }
+.reg-affected-table th, .reg-affected-table td { font-size: 13px; }
+.tag.returning { background: #efe6f7; border-color: #c9b0e0; color: #6a3d92; }
+.tag.danger { background: var(--danger-bg); border-color: #eab5ae; color: var(--danger); }
+.first-seen {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--muted);
+  background: #eef3f0;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 2px;
+}
 
 /* 配方变更审计 */
 .audit-card { margin-top: 22px; }

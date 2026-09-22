@@ -129,8 +129,18 @@ def analyze_recipe(conn: sqlite3.Connection, recipe_id: int) -> Optional[Dict[st
     ).fetchone()
     if recipe is None:
         return None
-
+    # 回归矩阵等批量场景可只建一次图，再逐版复用 _analyze_recipe_graph
     nodes, adjacency = _build_graph(conn)
+    return _analyze_recipe_graph(conn, recipe, nodes, adjacency)
+
+
+def _analyze_recipe_graph(
+    conn: sqlite3.Connection,
+    recipe: sqlite3.Row,
+    nodes: Dict[str, Dict[str, Any]],
+    adjacency: Dict[str, List[Dict[str, str]]],
+) -> Dict[str, Any]:
+    """对单个配方版本执行 DFS 分析；nodes/adjacency 由调用方预先构建以便跨版本复用。"""
     items = conn.execute(
         """SELECT ri.ingredient_code, ri.quantity, ri.unit,
                   COALESCE(i.name, '') AS ingredient_name
@@ -138,7 +148,7 @@ def analyze_recipe(conn: sqlite3.Connection, recipe_id: int) -> Optional[Dict[st
              LEFT JOIN ingredients i ON i.code = ri.ingredient_code
             WHERE ri.recipe_id = ?
             ORDER BY ri.id""",
-        (recipe_id,),
+        (recipe["id"],),
     ).fetchall()
 
     pid = 0

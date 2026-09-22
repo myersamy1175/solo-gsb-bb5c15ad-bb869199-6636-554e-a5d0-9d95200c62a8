@@ -135,8 +135,31 @@
   <!-- ========== 版本对比 ========== -->
   <section id="tab-compare" class="panel">
     <div class="panel-head">
-      <h2>两版配方差异对比</h2>
+      <h2>版本对比</h2>
     </div>
+
+    <!-- 过敏原回归矩阵 -->
+    <div class="card regression-card">
+      <div class="panel-head">
+        <h3>🧬 过敏原回归矩阵</h3>
+        <div class="head-controls">
+          <select id="reg-code" style="min-width:240px"></select>
+          <button class="btn primary" id="btn-regression">生成回归矩阵</button>
+        </div>
+      </div>
+      <p class="hint">选择一个配方代码后，后端按<strong>版本号 + 创建时间</strong>稳定排序，逐版复用替代链图分析，输出每版相对上一版<strong>新增 / 消失</strong>的直接过敏原与替代链过敏原、受影响配料及<strong>首次出现版本</strong>；每行可展开查看来源替代路径与循环 / 缺失标记。至少需要 2 个版本才能逐版对比。</p>
+      <div id="reg-filters" class="reg-filters hidden">
+        <input type="search" id="reg-filter-text" placeholder="筛选：版本号 / 过敏原 / 配料代码或名称…" style="flex:1;min-width:220px" />
+        <label class="reg-check"><input type="checkbox" id="reg-filter-changes-only" /> 仅有变化的版本</label>
+        <label class="reg-check"><input type="checkbox" id="reg-filter-new" /> 有新增过敏原</label>
+        <label class="reg-check"><input type="checkbox" id="reg-filter-removed" /> 有消失过敏原</label>
+        <label class="reg-check"><input type="checkbox" id="reg-filter-cycles" /> 有循环/缺失标记</label>
+        <button type="button" class="btn tiny" id="btn-reg-filter-reset">重置筛选</button>
+      </div>
+      <div id="reg-matrix-result"></div>
+    </div>
+
+    <h3 class="sub-title">两版任选单次对比</h3>
     <div class="card compare-picker">
       <label>版本 A <select id="cmp-a"></select></label>
       <span class="arrow">⇄</span>

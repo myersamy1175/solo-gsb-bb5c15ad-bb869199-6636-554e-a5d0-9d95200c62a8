@@ -356,6 +356,7 @@ function fillRecipeSelects() {
     $("#cmp-a").selectedIndex = 0;
     $("#cmp-b").selectedIndex = 1;
   }
+  fillRegressionCodeOptions();
   fillAuditScopeOptions();
 }
 
@@ -951,6 +952,232 @@ function renderCompare(d) {
   }
 
   $("#compare-result").innerHTML = html;
+}
+
+// ---------------- 过敏原回归矩阵（版本对比页内） ----------------
+
+const regState = { code: null, data: null };
+
+function fillRegressionCodeOptions(preferCode = null) {
+  const groups = {};
+  state.recipes.forEach((r) => { (groups[r.code] ||= []).push(r); });
+  const sel = $("#reg-code");
+  sel.innerHTML = Object.entries(groups).map(([code, rs]) =>
+    `<option value="${esc(code)}">${esc(code)}（${rs.length} 版）</option>`).join("");
+  const target = preferCode || regState.code;
+  if (target && Array.from(sel.options).some((o) => o.value === target)) sel.value = target;
+  regState.code = sel.value || null;
+}
+
+$("#reg-code").addEventListener("change", () => { regState.code = $("#reg-code").value; });
+
+$("#btn-regression").addEventListener("click", async () => {
+  const code = $("#reg-code").value;
+  if (!code) return toast("请先选择配方代码", true);
+  regState.code = code;
+  $("#reg-matrix-result").innerHTML = '<div class="hint">正在逐版执行替代链图分析…</div>';
+  try {
+    regState.data = await api(`/api/recipes/by-code/${encodeURIComponent(code)}/allergen-regression`);
+    renderRegressionMatrix();
+  } catch (err) {
+    regState.data = null;
+    $("#reg-filters").classList.add("hidden");
+    $("#reg-matrix-result").innerHTML = "";
+    toast(err.message, true);
+  }
+});
+
+["reg-filter-text", "reg-filter-changes-only", "reg-filter-new", "reg-filter-removed", "reg-filter-cycles"]
+  .forEach((id) => {
+    const el = $("#" + id);
+    el.addEventListener("input", renderRegressionMatrix);
+    el.addEventListener("change", renderRegressionMatrix);
+  });
+$("#btn-reg-filter-reset").addEventListener("click", () => {
+  $("#reg-filter-text").value = "";
+  $("#reg-filter-changes-only").checked = false;
+  $("#reg-filter-new").checked = false;
+  $("#reg-filter-removed").checked = false;
+  $("#reg-filter-cycles").checked = false;
+  renderRegressionMatrix();
+});
+
+function regAddedTags(items) {
+  if (!items || !items.length) return '<span class="tag muted">无</span>';
+  return items.map((x) => {
+    const cls = x.kind === "chain" ? "new" : "direct";
+    const first = x.first_seen_version === undefined || x.first_seen_version === null ? "" :
+      ` <span class="first-seen" title="该过敏原在本配方中的首次出现版本">首见 v${esc(x.first_seen_version)}</span>`;
+    const ret = x.is_returning ? ' <span class="tag returning" title="曾在更早版本出现后消失，本版再次出现">回归</span>' : "";
+    return `<span class="tag ${cls}">+${esc(x.allergen)}</span>${first}${ret}`;
+  }).join(" ");
+}
+
+function regRemovedTags(list, cls = "ok") {
+  if (!list || !list.length) return '<span class="tag muted">无</span>';
+  return list.map((a) => `<span class="tag ${cls}">−${esc(a)}</span>`).join(" ");
+}
+
+const REG_STATUS_LABEL = { added: ["new", "新增配料"], removed: ["danger", "消失配料"], changed: ["muted", "过敏原变化"] };
+
+function regPathHtml(p) {
+  const nodes = p.nodes.map((n, idx) => {
+    const isLast = idx === p.nodes.length - 1;
+    const repeat = p.cyclic && isLast;
+    const cls = ["path-node"];
+    if (isLast && !p.cyclic) cls.push("terminal");
+    if (repeat) cls.push("repeat");
+    if (!n.exists) cls.push("missing-node");
+    const al = n.allergens.length ? `<span class="al">[${esc(n.allergens.join(","))}]</span>` : "";
+    return `<span class="${cls.join(" ")}">${esc(n.code)}${al}</span>`;
+  }).join('<span class="path-edge"> → </span>');
+  const badges = [];
+  if (p.cyclic) badges.push(`<span class="badge cycle">循环! 回到 ${esc(p.cycle_node)}</span>`);
+  if (p.missing) badges.push('<span class="badge missing">缺失节点</span>');
+  if (p.truncated) badges.push('<span class="badge missing">已达深度上限</span>');
+  if (p.terminal) badges.push('<span class="tag ok">终止路径</span>');
+  if (p.regression_allergens && p.regression_allergens.length)
+    badges.push(`<span class="tag new">本版新增: ${esc(p.regression_allergens.join(", "))}</span>`);
+  return `<div class="path-line ${p.cyclic ? "cyclic" : p.missing ? "missing" : ""}">
+    ${nodes}<span class="path-meta"><span class="path-id">#${p.id}</span>${badges.join(" ")}</span></div>`;
+}
+
+function regAffectedRows(row) {
+  return row.affected_ingredients.map((it) => {
+    const [badgeCls, label] = REG_STATUS_LABEL[it.status] || ["muted", it.status];
+    const added = `${regAddedTags(it.direct_added.map((a) => ({ allergen: a, kind: "direct" })))}<br>${regAddedTags(it.chain_added.map((a) => ({ allergen: a, kind: "chain" })))}`;
+    const removed = `${regRemovedTags(it.direct_removed, "danger")}<br>${regRemovedTags(it.chain_removed, "ok")}`;
+    let pathsHtml = '<span class="tag muted">无</span>';
+    if (it.paths && it.paths.length) {
+      const first = it.first_seen_version
+        ? `<span class="tag muted">配料首见 v${esc(it.first_seen_version)}</span>` : "";
+      pathsHtml = `<details><summary>${it.paths.length} 条相关来源路径 ${first}</summary>
+        <div class="path-list">${it.paths.map(regPathHtml).join("")}</div></details>`;
+    } else if (it.status === "removed") {
+      pathsHtml = '<span class="tag muted">本版已不含该配料</span>';
+    }
+    const miss = it.exists ? "" : ' <span class="badge missing">原料缺失</span>';
+    return `
+      <tr>
+        <td><span class="tag ${badgeCls}">${label}</span></td>
+        <td><span class="code-mono">${esc(it.ingredient_code)}</span>${miss}<br><small>${esc(it.ingredient_name)}</small></td>
+        <td>${added}</td>
+        <td>${removed}</td>
+        <td>${pathsHtml}</td>
+      </tr>`;
+  }).join("");
+}
+
+function renderRegressionRow(row) {
+  const hasAdd = row.direct_added.length || row.chain_added.length;
+  const hasRemove = row.direct_removed.length || row.chain_removed.length;
+  const hasCycleFlag = row.cycles.length || row.missing_nodes.length;
+  const hasChange = hasAdd || hasRemove || row.cycles_new.length || row.cycles_resolved.length ||
+    row.missing_new.length || row.missing_resolved.length;
+
+  let alerts = "";
+  if (row.cycles_new.length) {
+    alerts += `<div class="alert cycle"><strong>⚠ 本版新出现 ${row.cycles_new.length} 条循环替代路径：</strong>` +
+      row.cycles_new.map((c) => `<span class="code-mono">${c.nodes.map(esc).join(" → ")}</span>`).join("；") + "</div>";
+  }
+  if (row.cycles_resolved.length) {
+    alerts += `<div class="alert warn"><strong>✓ 上一版的 ${row.cycles_resolved.length} 条循环本版已解除：</strong>` +
+      row.cycles_resolved.map((c) => `<span class="code-mono">${c.nodes.map(esc).join(" → ")}</span>`).join("；") + "</div>";
+  }
+  if (row.missing_new.length) alerts += `<div class="alert warn"><strong>⚠ 新增缺失原料节点：</strong>${row.missing_new.map(esc).join("、")}</div>`;
+  if (row.missing_resolved.length) alerts += `<div class="alert warn"><strong>✓ 缺失节点已补录：</strong>${row.missing_resolved.map(esc).join("、")}</div>`;
+
+  const headBadges = [];
+  if (row.is_baseline) headBadges.push('<span class="tag direct">基线版本</span>');
+  if (hasAdd) headBadges.push('<span class="tag new">有新增过敏原</span>');
+  if (hasRemove) headBadges.push('<span class="tag ok">有消失过敏原</span>');
+  if (row.cycles.length) headBadges.push(`<span class="badge cycle">持续循环 ${row.cycles.length}</span>`);
+  if (row.missing_nodes.length) headBadges.push(`<span class="badge missing">缺失 ${row.missing_nodes.length}</span>`);
+  if (!row.is_baseline && !hasChange) headBadges.push('<span class="tag muted">过敏原无变化</span>');
+
+  const body = `
+    <div class="summary-bar">
+      <div class="summary-box"><h4>直接过敏原 · 新增</h4><div>${regAddedTags(row.direct_added)}</div></div>
+      <div class="summary-box"><h4>直接过敏原 · 消失</h4><div>${regRemovedTags(row.direct_removed, "danger")}</div></div>
+      <div class="summary-box"><h4>替代链过敏原 · 新增</h4><div>${regAddedTags(row.chain_added)}</div></div>
+      <div class="summary-box"><h4>替代链过敏原 · 消失</h4><div>${regRemovedTags(row.chain_removed)}</div></div>
+    </div>
+    ${alerts}
+    <details ${hasChange && !row.is_baseline ? "open" : ""}>
+      <summary>受影响配料（${row.affected_ingredients.length} 项：新增/消失配料，或直接、替代链过敏原集合发生变化）</summary>
+      <table class="data-table reg-affected-table" style="margin-top:8px">
+        <thead><tr><th>变化</th><th>配料</th><th>新增过敏原（直接 / 替代链）</th><th>消失过敏原（直接 / 替代链）</th><th>可展开来源路径</th></tr></thead>
+        <tbody>${regAffectedRows(row) || '<tr><td colspan="5" class="empty">无</td></tr>'}</tbody>
+      </table>
+    </details>
+    <div class="reg-current"><small>本版直接过敏原：${allergenTags(row.direct_allergens, "direct")} ｜ 含替代链：${allergenTags(row.chain_allergens, "allergen")}</small></div>`;
+
+  return `
+  <details class="card reg-row ${hasAdd ? "reg-has-add" : ""} ${hasRemove ? "reg-has-remove" : ""} ${hasCycleFlag ? "reg-has-flag" : ""}" ${hasChange && !row.is_baseline ? "open" : ""}>
+    <summary>
+      <span class="reg-version">v${esc(row.version)}</span>
+      <span class="tag muted">#${row.index + 1}</span>
+      <span class="tag muted">${row.is_baseline ? "无（最早版本）" : `相对上一版 v${esc(row.prev_version)}`}</span>
+      ${headBadges.join(" ")}
+      <span class="reg-time">🕓 ${esc(row.created_at || "")}</span>
+    </summary>
+    ${body}
+  </details>`;
+}
+
+function renderRegressionMatrix() {
+  const data = regState.data;
+  const box = $("#reg-matrix-result");
+  if (!data) return;
+  $("#reg-filters").classList.remove("hidden");
+
+  const kw = ($("#reg-filter-text").value || "").trim().toLowerCase();
+  const changesOnly = $("#reg-filter-changes-only").checked;
+  const onlyNew = $("#reg-filter-new").checked;
+  const onlyRemoved = $("#reg-filter-removed").checked;
+  const onlyCycles = $("#reg-filter-cycles").checked;
+
+  const matchesKeyword = (row) => {
+    if (!kw) return true;
+    if (row.version.toLowerCase().includes(kw) || (row.name || "").toLowerCase().includes(kw)) return true;
+    const hay = [row.direct_added, row.chain_added].flat().map((x) => x.allergen)
+      .concat(row.direct_removed, row.chain_removed,
+        row.affected_ingredients.flatMap((i) => [i.ingredient_code, i.ingredient_name]));
+    return hay.some((s) => String(s || "").toLowerCase().includes(kw));
+  };
+
+  const rows = data.matrix.filter((row) => {
+    const hasAdd = row.direct_added.length || row.chain_added.length;
+    const hasRemove = row.direct_removed.length || row.chain_removed.length;
+    const hasFlag = row.cycles.length || row.missing_nodes.length;
+    const changed = hasAdd || hasRemove ||
+      row.cycles_new.length || row.cycles_resolved.length ||
+      row.missing_new.length || row.missing_resolved.length;
+    if (changesOnly && !row.is_baseline && !changed) return false;
+    if (onlyNew && !hasAdd) return false;
+    if (onlyRemoved && !hasRemove) return false;
+    if (onlyCycles && !hasFlag) return false;
+    return matchesKeyword(row);
+  });
+
+  let html = `
+    <div class="summary-bar">
+      <div class="summary-box"><h4>配方代码</h4><strong>${esc(data.code)}</strong><br><small>共 ${data.version_count} 个版本</small></div>
+      <div class="summary-box"><h4>排序规则</h4><small>${esc(data.sort_rule)}</small></div>
+      <div class="summary-box"><h4>筛选结果</h4><small>显示 ${rows.length} / ${data.version_count} 版</small></div>
+      <div class="summary-box"><h4>过敏原首见版本</h4><small>${data.first_seen.direct.map((x) => `${esc(x.allergen)}→v${esc(x.version)}`).join("、") || "无直接过敏原"}</small></div>
+    </div>`;
+
+  if (!data.sufficient_versions) {
+    html += `<div class="alert warn"><strong>版本不足：</strong>${esc(data.message)}</div>`;
+  }
+
+  if (!rows.length) {
+    html += '<div class="empty">当前筛选条件下没有可显示的版本，请调整筛选。</div>';
+  } else {
+    html += rows.map(renderRegressionRow).join("");
+  }
+  box.innerHTML = html;
 }
 
 // ---------------- 配方变更审计时间线（版本对比页内） ----------------
